@@ -1,0 +1,23 @@
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Node
+node_modules/
+
+# Java / Maven
+target/
+*.class
+*.jar
+!.mvn/wrapper/*.jar
+
+# Docker
+docker-compose.override.yml

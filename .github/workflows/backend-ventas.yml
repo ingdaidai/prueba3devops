@@ -1,0 +1,96 @@
+name: CI/CD Backend Ventas
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'back-Ventas_SpringBoot/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ventas-api
+  IMAGE_TAG: latest
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales de AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login en Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Construir y subir imagen Docker a ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -f back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile \
+            back-Ventas_SpringBoot/Springboot-API-REST
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Obtener secretos desde Doppler
+        uses: dopplerhq/cli-action@v3
+
+      - name: Configurar variables de Doppler
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          echo "SERVIDOR_VENTAS=$(doppler secrets get SERVIDOR_VENTAS --plain)" >> $GITHUB_ENV
+
+      - name: Desplegar en EC2 mediante SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ env.SERVIDOR_VENTAS }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.SSH_KEY_CITT }}
+          port: ${{ secrets.EC2_SSH_PORT }}
+          script: |
+            # Instalar AWS CLI si no existe
+            if ! command -v aws &> /dev/null; then
+              sudo apt update -y
+              sudo apt install -y awscli
+            fi
+
+            # Instalar Docker si no existe
+            if ! command -v docker &> /dev/null; then
+              sudo apt update -y
+              sudo apt install -y docker.io
+            fi
+
+            # Login en Amazon ECR desde la instancia EC2
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+              sudo docker login --username AWS --password-stdin \
+              ${{ steps.login-ecr.outputs.registry }}
+
+            # Detener y eliminar contenedor anterior si existe
+            sudo docker stop ventas_api 2>/dev/null || true
+            sudo docker rm ventas_api 2>/dev/null || true
+
+            # Pull de la nueva imagen
+            sudo docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+            # Ejecutar el nuevo contenedor
+            sudo docker run -d --name ventas_api -p 8080:8080 \
+              -e DB_ENDPOINT=${{ secrets.DB_ENDPOINT }} \
+              -e DB_PORT=${{ secrets.DB_PORT }} \
+              -e DB_NAME=${{ secrets.DB_NAME }} \
+              -e DB_USERNAME=${{ secrets.DB_USERNAME }} \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+            # Limpiar imagenes sin usar
+            sudo docker image prune -f
