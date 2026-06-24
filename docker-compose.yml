@@ -2,6 +2,10 @@
 # Docker Compose - Desarrollo Local
 # Levanta MySQL + Backend Ventas + Backend Despachos + Frontend
 # ============================================================
+# Los nombres de servicio (ventas-api, despachos-api) son
+# idénticos a los usados en ECS Service Connect para que nginx
+# resuelva los mismos DNS tanto en local como en producción.
+# ============================================================
 # Uso:
 #   cp .env.example .env   (editar variables si es necesario)
 #   docker compose up --build
@@ -28,7 +32,8 @@ services:
       retries: 5
 
   # ---- Backend Ventas (puerto 8080) ----
-  backend-ventas:
+  # Nombre: ventas-api → mismo que en ECS Service Connect
+  ventas-api:
     build:
       context: ./back-Ventas_SpringBoot/Springboot-API-REST
       dockerfile: Dockerfile
@@ -47,7 +52,8 @@ services:
     restart: unless-stopped
 
   # ---- Backend Despachos (puerto 8081) ----
-  backend-despachos:
+  # Nombre: despachos-api → mismo que en ECS Service Connect
+  despachos-api:
     build:
       context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
       dockerfile: Dockerfile
@@ -65,7 +71,9 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ---- Frontend (puerto 3000 -> 80 interno Nginx) ----
+  # ---- Frontend (puerto 3000 → 80 interno Nginx) ----
+  # nginx proxea /api/ventas/ → ventas-api:8080
+  #             /api/despachos/ → despachos-api:8081
   frontend:
     build:
       context: ./front_despacho
@@ -73,9 +81,13 @@ services:
     container_name: prueba3-frontend
     ports:
       - "3000:80"
+    environment:
+      # URLs por defecto — coinciden con los nombres de servicio de este compose
+      BACKEND_VENTAS_URL: http://ventas-api:8080
+      BACKEND_DESPACHOS_URL: http://despachos-api:8081
     depends_on:
-      - backend-ventas
-      - backend-despachos
+      - ventas-api
+      - despachos-api
     restart: unless-stopped
 
 volumes:

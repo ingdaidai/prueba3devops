@@ -1,0 +1,66 @@
+{
+  "family": "despachos-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::782970650388:role/LabRole",
+  "containerDefinitions": [
+    {
+      "name": "despachos-api",
+      "image": "782970650388.dkr.ecr.us-east-1.amazonaws.com/despachos-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8081,
+          "protocol": "tcp",
+          "name": "despachos-api-8081-tcp",
+          "appProtocol": "http"
+        }
+      ],
+      "environment": [
+        {
+          "name": "DB_PORT",
+          "value": "3306"
+        },
+        {
+          "name": "SPRING_DATASOURCE_URL",
+          "value": "jdbc:mysql://${DB_ENDPOINT}:${DB_PORT}/${DB_NAME}?useSSL=false&serverTimezone=UTC&createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DB_ENDPOINT",
+          "valueFrom": "arn:aws:ssm:us-east-1:782970650388:parameter/prueba3/DB_ENDPOINT"
+        },
+        {
+          "name": "DB_NAME",
+          "valueFrom": "arn:aws:ssm:us-east-1:782970650388:parameter/prueba3/DB_NAME"
+        },
+        {
+          "name": "DB_USERNAME",
+          "valueFrom": "arn:aws:ssm:us-east-1:782970650388:parameter/prueba3/DB_USERNAME"
+        },
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "arn:aws:ssm:us-east-1:782970650388:parameter/prueba3/DB_PASSWORD"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/despachos-api",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -q -O - http://localhost:8081/api/v1/despachos > /dev/null || exit 1"],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}

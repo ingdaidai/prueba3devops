@@ -1,4 +1,4 @@
-name: CI/CD Frontend Despacho
+name: CI/CD Frontend Despacho → ECS
 
 on:
   push:
@@ -10,7 +10,9 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: frontend-despacho
-  IMAGE_TAG: latest
+  ECS_CLUSTER: mi-cluster
+  ECS_SERVICE: frontend-despacho-service
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   build-and-deploy:
@@ -38,54 +40,25 @@ jobs:
         run: |
           docker build \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
             -f front_despacho/Dockerfile \
             front_despacho
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Obtener secretos desde Doppler
-        uses: dopplerhq/cli-action@v3
-
-      - name: Configurar variables de Doppler
-        env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+      - name: Forzar nuevo despliegue en ECS
         run: |
-          echo "SERVIDOR_FRONTEND=$(doppler secrets get SERVIDOR_FRONTEND --plain)" >> $GITHUB_ENV
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
 
-      - name: Desplegar en EC2 mediante SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ env.SERVIDOR_FRONTEND }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.EC2_KEY }}
-          port: ${{ secrets.PORT }}
-          script: |
-            # Instalar AWS CLI si no existe
-            if ! command -v aws &> /dev/null; then
-              sudo apt update -y
-              sudo apt install -y awscli
-            fi
-
-            # Instalar Docker si no existe
-            if ! command -v docker &> /dev/null; then
-              sudo apt update -y
-              sudo apt install -y docker.io
-            fi
-
-            # Login en Amazon ECR desde la instancia EC2
-            aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
-              sudo docker login --username AWS --password-stdin \
-              ${{ steps.login-ecr.outputs.registry }}
-
-            # Detener y eliminar contenedor anterior si existe
-            sudo docker stop frontend_despacho 2>/dev/null || true
-            sudo docker rm frontend_despacho 2>/dev/null || true
-
-            # Pull de la nueva imagen
-            sudo docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-
-            # Ejecutar el nuevo contenedor
-            sudo docker run -d --name frontend_despacho -p 80:80 \
-              ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-
-            # Limpiar imagenes sin usar
-            sudo docker image prune -f
+      - name: Esperar a que el despliegue sea estable
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
+          echo "✅ Despliegue del frontend completado exitosamente"

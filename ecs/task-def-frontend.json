@@ -1,0 +1,48 @@
+{
+  "family": "frontend-despacho",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::782970650388:role/LabRole",
+  "containerDefinitions": [
+    {
+      "name": "frontend-despacho",
+      "image": "782970650388.dkr.ecr.us-east-1.amazonaws.com/frontend-despacho:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp",
+          "name": "frontend-despacho-80-tcp",
+          "appProtocol": "http"
+        }
+      ],
+      "environment": [
+        {
+          "name": "BACKEND_VENTAS_URL",
+          "value": "http://172.31.5.128:8080"
+        },
+        {
+          "name": "BACKEND_DESPACHOS_URL",
+          "value": "http://172.31.59.9:8081"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/frontend-despacho",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost/ || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 15
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "cluster": "mi-cluster",
+  "serviceName": "svc-despachos",
+  "taskDefinition": "despachos-api:1",
+  "desiredCount": 1,
+  "launchType": "FARGATE",
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": [
+        "subnet-074d2ca6ff4c7f99b",
+        "subnet-0f5d7ed7b0ad85933",
+        "subnet-0645f19b26ba634c8",
+        "subnet-0888d3ee303001e98",
+        "subnet-089c8fb09eae355b6",
+        "subnet-0a4767c571a1ebdd2"
+      ],
+      "securityGroups": [
+        "sg-0ed95399c0a3bfc36"
+      ],
+      "assignPublicIp": "ENABLED"
+    }
+  }
+}
