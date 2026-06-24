@@ -8,15 +8,15 @@ export const FormCierreDespacho = ({ despacho, onClose }) => {
   const onSubmit = async (data) => {
     console.log("onSubmit ejecutado");
     const jsonData = {
-      intento: data.intento,
-      despachado: data.despachado,
+      intento: Number(data.intento),
+      despachado: JSON.parse(data.despachado),
     };
 
     console.log("Datos del formulario:", jsonData);
 
     try {
       await axios.put(
-        `http://192.168.320/api/v1/despachos/${despacho.idDespacho}`,
+        `/api/despachos/api/v1/despachos/${despacho.idDespacho}`,
         jsonData,
         {
           headers:{
@@ -26,15 +26,21 @@ export const FormCierreDespacho = ({ despacho, onClose }) => {
         }
       );
       Swal.fire({
-        title: "Despacho modificado 🛻!",
+        title: "Despacho modificado!",
         text: "El despacho ha sido modificado exitosamente",
         icon: "success",
         confirmButtonText: "Aceptar",
       });
+      onClose();
     } catch (error) {
       console.error("Error en la solicitud:", error);
+      Swal.fire({
+        title: "Error",
+        text: "No se pudo modificar el despacho",
+        icon: "error",
+        confirmButtonText: "Aceptar",
+      });
     }
-    onClose();
   };
 
   return (
