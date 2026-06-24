@@ -11,7 +11,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: despachos-api
   ECS_CLUSTER: mi-cluster
-  ECS_SERVICE: despachos-api-service
+  ECS_SERVICE: svc-despachos
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:

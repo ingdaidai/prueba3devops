@@ -11,7 +11,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: frontend-despacho
   ECS_CLUSTER: mi-cluster
-  ECS_SERVICE: frontend-despacho-service
+  ECS_SERVICE: svc-frontend
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
