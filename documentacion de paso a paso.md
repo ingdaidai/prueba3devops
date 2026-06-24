@@ -1,223 +1,413 @@
-# Documentación Paso a Paso
+# Documentación Paso a Paso — EP3 DevOps
 
-Esta documentación registra de forma incremental todas las configuraciones, dockerizaciones y pipelines implementados en el proyecto **Prueba 3 DevOps**.
+> **ISY1101 · Introducción a Herramientas DevOps**  
+> Tecnología elegida: **AWS ECS Fargate** (monorepositorio con 3 servicios)  
+> Repo: `https://github.com/ingdaidai/prueba3devops`
 
 ---
 
-## 1. Inicialización del Monorepositorio
+## Estado actual del repositorio (código listo ✅)
 
-**Problema:** El directorio `/home/asaro/Developer/Prueba 3 Devops` no era un repositorio Git. Además, las subcarpetas (`front_despacho`, `back-Ventas_SpringBoot`, `back-Despachos_SpringBoot`) tenían cada una su propio `.git` interno (eran repositorios independientes).
+Todo lo siguiente ya está implementado y commiteado en el repo:
 
-**Solución:**
-1. Se ejecutó `git init` en la raíz del proyecto.
-2. Se eliminaron los directorios `.git` internos de las tres subcarpetas para unificar todo en un solo monorepositorio.
-3. Se agregaron todos los archivos al staging area con `git add .`.
-4. Se realizó el primer commit: `"Initial commit: unified front-end and back-end services"`.
-5. Se configuró el remote `origin` apuntando a `https://github.com/ingdaidai/prueba3devops.git`.
-6. Se realizó el push inicial a la rama `main`.
+| Componente | Archivo | Estado |
+|---|---|---|
+| Docker Backend Ventas | `back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile` | ✅ Listo |
+| Docker Backend Despachos | `back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile` | ✅ Listo |
+| Docker Frontend (nginx + envsubst) | `front_despacho/Dockerfile` | ✅ Listo |
+| nginx reverse proxy template | `front_despacho/nginx.conf` | ✅ Listo |
+| Entrypoint runtime vars | `front_despacho/docker-entrypoint.sh` | ✅ Listo |
+| Docker Compose local (nombres = ECS) | `docker-compose.yml` | ✅ Listo |
+| Variables de entorno ejemplo | `.env.example` | ✅ Listo |
+| Pipeline CI/CD Frontend → ECS | `.github/workflows/frontend.yml` | ✅ Listo |
+| Pipeline CI/CD Backend Ventas → ECS | `.github/workflows/backend-ventas.yml` | ✅ Listo |
+| Pipeline CI/CD Backend Despachos → ECS | `.github/workflows/backend-despacho.yml` | ✅ Listo |
+| Task Definitions ECS (referencia) | `ecs/task-def-*.json` | ✅ Listos |
+| IPs hardcodeadas eliminadas | 4 componentes JSX | ✅ Corregido |
+| `.gitignore` con `.env` excluido | `front_despacho/.gitignore` | ✅ Listo |
 
-**Comandos ejecutados:**
-```bash
-git init
-rm -rf front_despacho/.git back-Ventas_SpringBoot/.git back-Despachos_SpringBoot/.git
-git add .
-git commit -m "Initial commit: unified front-end and back-end services"
-git remote add origin https://github.com/ingdaidai/prueba3devops.git
-git branch -M main
-git push -u origin main
+---
+
+## Arquitectura objetivo en AWS
+
+```
+Internet
+    │
+    ▼
+[ALB — puerto 80, Internet-facing]
+    │
+    ▼
+[ECS Service: frontend-despacho-service]
+  └─ Task: nginx (puerto 80)
+       │  proxy /api/ventas/*     → ventas-api:8080   (ECS Service Connect)
+       └─ proxy /api/despachos/*  → despachos-api:8081 (ECS Service Connect)
+                                          │
+                                          ▼
+                                   [RDS MySQL — privado]
 ```
 
 ---
 
-## 2. Dockerización del Backend Despachos
+## Lo que FALTA hacer en AWS (pasos manuales)
 
-**Archivo creado:** `back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile`
-
-**Descripción:** Dockerfile multi-stage que:
-- **Stage 1 (build):** Usa `maven:3.9-eclipse-temurin-17` para compilar el proyecto Spring Boot con Maven, descargando dependencias primero (cache de capas) y luego empaquetando el JAR sin ejecutar tests.
-- **Stage 2 (runtime):** Usa `eclipse-temurin:17-jre-alpine` como imagen ligera de producción, copiando solo el JAR compilado.
-- **Puerto expuesto:** `8081` (configurado en `application.properties`).
-
----
-
-## 3. Dockerización del Backend Ventas
-
-**Archivo creado:** `back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile`
-
-**Descripción:** Dockerfile multi-stage idéntico en estructura al de Despachos:
-- **Stage 1 (build):** Compilación con Maven + Java 17.
-- **Stage 2 (runtime):** JRE Alpine ligero.
-- **Puerto expuesto:** `8080` (puerto por defecto de Spring Boot).
+### ✅ FASE 0 — Prerequisitos (ya hecho)
+- [x] Cuenta AWS Academy activa con Learned Lab iniciado
+- [x] AWS CLI instalado y configurado (`aws configure`)
+- [x] Docker Desktop corriendo
+- [x] Git configurado, repo en GitHub
+- [x] Código de frontend y backends con Dockerfiles funcionando
+- [x] Decisión tomada: **ECS Fargate**
 
 ---
 
-## 4. Dockerización del Frontend
+### 🔲 FASE 1 — Crear repositorios ECR
 
-**Archivos creados:**
-- `front_despacho/Dockerfile`
-- `front_despacho/nginx.conf`
+Ejecutar en terminal (con credenciales de Academy activas):
 
-**Descripción:**
-- **Dockerfile multi-stage:**
-  - **Stage 1 (build):** Usa `node:20-alpine` para instalar dependencias con `npm ci` y compilar la aplicación React/Vite con `npm run build`.
-  - **Stage 2 (runtime):** Usa `nginx:1.27-alpine` para servir los archivos estáticos generados en `/dist`.
-- **nginx.conf:** Configuración personalizada de Nginx que:
-  - Sirve la SPA de React con `try_files $uri $uri/ /index.html` para soportar React Router.
-  - Habilita compresión Gzip.
-  - Configura cache de assets estáticos por 1 año.
-
----
-
-## 5. Docker Compose para Despliegue del Frontend en EC2
-
-**Archivo creado:** `front_despacho/docker-compose.yml`
-
-**Descripción:** Archivo Docker Compose simple para desplegar el frontend de forma independiente en la instancia EC2 del frontend. Mapea el puerto 80 del contenedor al puerto 80 del host.
-
----
-
-## 6. Docker Compose Global para Desarrollo Local
-
-**Archivo creado:** `docker-compose.yml` (raíz del proyecto)
-
-**Descripción:** Docker Compose que levanta todo el stack para desarrollo local:
-- **mysql:** Contenedor MySQL 8.0 con healthcheck, volumen persistente y variables de entorno desde `.env`.
-- **backend-ventas:** Construye desde el Dockerfile de Ventas, se conecta a MySQL, expone puerto 8080.
-- **backend-despachos:** Construye desde el Dockerfile de Despachos, se conecta a MySQL, expone puerto 8081.
-- **frontend:** Construye el frontend con Nginx, expone puerto 3000 (mapeado al 80 interno).
-
-**Uso:**
 ```bash
-cp .env.example .env
-# Editar .env con tus valores
-docker compose up --build
-```
-
----
-
-## 7. Archivo de Variables de Entorno de Ejemplo
-
-**Archivo creado:** `.env.example`
-
-**Descripción:** Plantilla con todas las variables de entorno necesarias:
-- Variables de base de datos: `DB_ENDPOINT`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`.
-- Variables de AWS/ECR: `AWS_REGION`, `AWS_ACCOUNT_ID`, nombres de repositorios ECR.
-
----
-
-## 8. Pipeline CI/CD Backend Despachos
-
-**Archivo creado:** `.github/workflows/backend-despacho.yml`
-
-**Descripción:** Pipeline de GitHub Actions que se dispara automáticamente al hacer push a `main` cuando hay cambios en `back-Despachos_SpringBoot/**`. Pasos:
-1. Checkout del repositorio.
-2. Configuración de credenciales AWS (access key, secret key, session token).
-3. Login en Amazon ECR.
-4. Build de la imagen Docker y push a ECR.
-5. Obtención de secretos desde Doppler (dirección IP del servidor).
-6. Conexión SSH a la EC2 de despachos para:
-   - Instalar AWS CLI y Docker si no existen.
-   - Login en ECR desde la EC2.
-   - Detener y eliminar el contenedor anterior.
-   - Pull de la nueva imagen.
-   - Ejecutar el nuevo contenedor con las variables de entorno de la BD.
-   - Limpieza de imágenes sin usar.
-
----
-
-## 9. Pipeline CI/CD Backend Ventas
-
-**Archivo creado:** `.github/workflows/backend-ventas.yml`
-
-**Descripción:** Pipeline análogo al de Despachos. Se dispara al detectar cambios en `back-Ventas_SpringBoot/**`. Usa la misma estrategia: build → push a ECR → deploy por SSH a EC2, pero apuntando al repositorio ECR `ventas-api` y desplegando en la EC2 de ventas (puerto 8080).
-
----
-
-## 10. Pipeline CI/CD Frontend
-
-**Archivo creado:** `.github/workflows/frontend.yml`
-
-**Descripción:** Pipeline que se dispara al detectar cambios en `front_despacho/**`. Pasos:
-1. Build de la imagen Docker del frontend (Node build + Nginx).
-2. Push de la imagen a Amazon ECR (`frontend-despacho`).
-3. Deploy por SSH a la EC2 del frontend:
-   - Login en ECR.
-   - Detener contenedor anterior.
-   - Pull de la nueva imagen.
-   - Ejecutar el contenedor mapeando puerto 80.
-   - Limpieza de imágenes.
-
----
-
-## 11. Limpieza de Workflows Antiguos
-
-**Directorios eliminados:**
-- `back-Despachos_SpringBoot/.github/`
-- `back-Ventas_SpringBoot/.github/`
-- `front_despacho/.github/`
-
-**Razón:** Los workflows antiguos estaban dentro de las subcarpetas y no serían detectados por GitHub Actions. Fueron reemplazados por los nuevos workflows en `.github/workflows/` en la raíz del monorepositorio.
-
----
-
-## 12. Archivo .gitignore
-
-**Archivo creado:** `.gitignore` (raíz)
-
-**Descripción:** Ignora archivos `.env`, `.DS_Store`, directorios de IDE, `node_modules/`, `target/` de Maven, y archivos `docker-compose.override.yml`.
-
----
-
-## Estado del Proyecto
-
-- [x] Repositorio Git inicializado y unificado en monorepositorio
-- [x] Dockerización de Backend Despachos (`Dockerfile`)
-- [x] Dockerización de Backend Ventas (`Dockerfile`)
-- [x] Dockerización de Frontend (`Dockerfile` + `nginx.conf`)
-- [x] Docker Compose para despliegue frontend en EC2
-- [x] Docker Compose global para desarrollo local
-- [x] Variables de entorno de ejemplo (`.env.example`)
-- [x] Pipeline CI/CD Backend Despachos (`.github/workflows/backend-despacho.yml`)
-- [x] Pipeline CI/CD Backend Ventas (`.github/workflows/backend-ventas.yml`)
-- [x] Pipeline CI/CD Frontend (`.github/workflows/frontend.yml`)
-- [x] Eliminación de workflows antiguos en subcarpetas
-- [x] Archivo `.gitignore` en la raíz
-
----
-
-## Secretos Requeridos en GitHub
-
-Para que los pipelines funcionen correctamente, debes configurar los siguientes secretos en tu repositorio de GitHub (`Settings → Secrets and variables → Actions`):
-
-| Secreto | Descripción |
-|---------|-------------|
-| `AWS_ACCESS_KEY_ID` | Access Key de AWS Academy |
-| `AWS_SECRET_ACCESS_KEY` | Secret Key de AWS Academy |
-| `AWS_SESSION_TOKEN` | Session Token de AWS Academy (Learned Lab) |
-| `DOPPLER_TOKEN` | Token de acceso a Doppler para secretos |
-| `DB_ENDPOINT` | Endpoint de la base de datos MySQL (RDS) |
-| `DB_PORT` | Puerto de la base de datos (generalmente `3306`) |
-| `DB_NAME` | Nombre de la base de datos |
-| `DB_USERNAME` | Usuario de la base de datos |
-| `DB_PASSWORD` | Contraseña de la base de datos |
-| `EC2_USERNAME` | Usuario SSH para backends (generalmente `ubuntu`) |
-| `SSH_KEY_CITT` | Clave SSH privada para backends |
-| `EC2_SSH_PORT` | Puerto SSH para backends (generalmente `22`) |
-| `USERNAME` | Usuario SSH para el servidor frontend |
-| `EC2_KEY` | Clave SSH privada para el servidor frontend |
-| `PORT` | Puerto SSH para el servidor frontend |
-
-## Repositorios ECR Requeridos
-
-Debes crear los siguientes repositorios en Amazon ECR (en la región `us-east-1`):
-
-1. `despachos-api`
-2. `ventas-api`
-3. `frontend-despacho`
-
-**Comando para crearlos:**
-```bash
-aws ecr create-repository --repository-name despachos-api --region us-east-1
-aws ecr create-repository --repository-name ventas-api --region us-east-1
 aws ecr create-repository --repository-name frontend-despacho --region us-east-1
+aws ecr create-repository --repository-name ventas-api --region us-east-1
+aws ecr create-repository --repository-name despachos-api --region us-east-1
 ```
+
+- [ ] Creaste repositorio ECR `frontend-despacho` `[ENCARGO IE2]`
+- [ ] Creaste repositorio ECR `ventas-api` `[ENCARGO IE2]`
+- [ ] Creaste repositorio ECR `despachos-api` `[ENCARGO IE2]`
+- [ ] Anotaste el ECR Registry URI: `<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com`
+- [ ] **Captura:** 3 repos visibles en ECR Console `[ENCARGO IE2]` `[PRES IE9]`
+
+> **Nota:** El primer push de imágenes lo hará automáticamente el pipeline de GitHub Actions al hacer push a `main`. No necesitas hacer build/push manual.
+
+---
+
+### 🔲 FASE 2 — Networking (VPC, Subredes, Security Groups)
+
+#### VPC y Subredes
+- [ ] Identificaste la VPC a usar (puede ser la default de Academy) `[ENCARGO IE1]`
+- [ ] Tienes **mínimo 2 subredes públicas** en zonas distintas `[ENCARGO IE1]`
+  - Ej: `us-east-1a` y `us-east-1b`
+  - Activar "Auto-assign public IP" en ambas
+- [ ] Internet Gateway adjuntado a la VPC
+- [ ] Tabla de rutas tiene ruta `0.0.0.0/0` → Internet Gateway
+
+#### Security Groups (crear 3)
+
+**SG-ALB** (para el Load Balancer):
+- Inbound: `HTTP 80` desde `0.0.0.0/0`
+- Outbound: All traffic
+
+**SG-Frontend** (para el ECS task del frontend):
+- Inbound: `TCP 80` **solo desde SG-ALB**
+- Outbound: All traffic
+
+**SG-Backend** (compartido entre ventas-api y despachos-api):
+- Inbound: `TCP 8080` **solo desde SG-Frontend**
+- Inbound: `TCP 8081` **solo desde SG-Frontend**
+- Outbound: All traffic
+
+- [ ] Creaste SG-ALB `[ENCARGO IE1]`
+- [ ] Creaste SG-Frontend (inbound solo desde SG-ALB) `[ENCARGO IE1]`
+- [ ] Creaste SG-Backend (inbound solo desde SG-Frontend) `[ENCARGO IE1]`
+- [ ] **Captura:** reglas de inbound de cada SG `[PRES IE8]`
+
+> ⚠️ **CRÍTICO para la defensa:** nunca pongas `0.0.0.0/0` en inbound del SG del backend. El profesor preguntará esto.
+
+---
+
+### 🔲 FASE 3 — Roles IAM
+
+#### Crear ecsTaskExecutionRole
+1. IAM → Roles → Create role
+2. Trusted entity: **AWS service → Elastic Container Service Task**
+3. Adjuntar política: `AmazonECSTaskExecutionRolePolicy`
+4. Nombre del rol: `ecsTaskExecutionRole`
+
+> Si el rol ya existe en Academy, úsalo directamente.
+
+- [ ] Existe el rol `ecsTaskExecutionRole` con la política adjunta `[ENCARGO IE1]`
+- [ ] **Captura:** rol con políticas adjuntas `[PRES IE8]`
+
+---
+
+### 🔲 FASE 4 — Parámetros SSM (Secrets de base de datos)
+
+Los backends leen los secrets de DB desde **AWS SSM Parameter Store** (ver `ecs/task-def-ventas.json`).
+
+Crear los 4 parámetros con tipo `SecureString`:
+
+```bash
+aws ssm put-parameter --name "/prueba3/DB_ENDPOINT" --value "<endpoint-RDS>" \
+  --type SecureString --region us-east-1
+
+aws ssm put-parameter --name "/prueba3/DB_NAME" --value "prueba3_db" \
+  --type SecureString --region us-east-1
+
+aws ssm put-parameter --name "/prueba3/DB_USERNAME" --value "appuser" \
+  --type SecureString --region us-east-1
+
+aws ssm put-parameter --name "/prueba3/DB_PASSWORD" --value "<tu-password>" \
+  --type SecureString --region us-east-1
+```
+
+- [ ] Parámetro `/prueba3/DB_ENDPOINT` creado en SSM `[ENCARGO IE5]`
+- [ ] Parámetro `/prueba3/DB_NAME` creado en SSM `[ENCARGO IE5]`
+- [ ] Parámetro `/prueba3/DB_USERNAME` creado en SSM `[ENCARGO IE5]`
+- [ ] Parámetro `/prueba3/DB_PASSWORD` creado en SSM `[ENCARGO IE5]`
+
+> Recuerda adjuntar `AmazonSSMReadOnlyAccess` (o `ssm:GetParameters`) al rol `ecsTaskExecutionRole` para que ECS pueda leer estos parámetros.
+
+---
+
+### 🔲 FASE 5 — Base de datos RDS MySQL
+
+- [ ] Creaste instancia RDS MySQL 8.0 en la misma VPC `[ENCARGO IE1]`
+  - DB instance class: `db.t3.micro` (suficiente para Academy)
+  - SG: uno que permita `TCP 3306` **solo desde SG-Backend**
+  - Public access: **No**
+- [ ] Creaste la base de datos inicial (`prueba3_db`)
+- [ ] Anotaste el endpoint RDS → se usa en el parámetro SSM `/prueba3/DB_ENDPOINT`
+
+---
+
+### 🔲 FASE 6 — Cluster ECS + Task Definitions
+
+#### Crear el cluster
+
+```bash
+# Desde AWS CLI o usar la consola:
+# ECS → Clusters → Create cluster → nombre: mi-cluster → Fargate
+aws ecs create-cluster --cluster-name mi-cluster --region us-east-1
+```
+
+- [ ] Cluster `mi-cluster` creado con Fargate `[ENCARGO IE1]`
+
+#### Habilitar Service Connect (namespace)
+- En el cluster `mi-cluster` → **Service Connect** → habilitar namespace: `mi-cluster`
+- Esto permite que los contenedores se comuniquen por nombre (`ventas-api`, `despachos-api`)
+
+- [ ] Service Connect habilitado con namespace `mi-cluster`
+
+#### Crear los Log Groups en CloudWatch
+
+```bash
+aws logs create-log-group --log-group-name /ecs/frontend-despacho --region us-east-1
+aws logs create-log-group --log-group-name /ecs/ventas-api --region us-east-1
+aws logs create-log-group --log-group-name /ecs/despachos-api --region us-east-1
+```
+
+- [ ] Log groups creados en CloudWatch `[ENCARGO IE6]`
+
+#### Registrar las Task Definitions
+
+Primero editar los archivos `ecs/task-def-*.json` reemplazando `<ACCOUNT_ID>` con tu Account ID real:
+
+```bash
+# Ver tu Account ID:
+aws sts get-caller-identity --query Account --output text
+```
+
+Luego registrar cada task definition:
+
+```bash
+aws ecs register-task-definition \
+  --cli-input-json file://ecs/task-def-frontend.json --region us-east-1
+
+aws ecs register-task-definition \
+  --cli-input-json file://ecs/task-def-ventas.json --region us-east-1
+
+aws ecs register-task-definition \
+  --cli-input-json file://ecs/task-def-despachos.json --region us-east-1
+```
+
+- [ ] Task Definition `frontend-despacho` registrada `[ENCARGO IE1]`
+- [ ] Task Definition `ventas-api` registrada `[ENCARGO IE1]`
+- [ ] Task Definition `despachos-api` registrada `[ENCARGO IE1]`
+
+---
+
+### 🔲 FASE 7 — ALB (Application Load Balancer)
+
+1. EC2 → Load Balancers → Create → **Application Load Balancer**
+2. Scheme: **Internet-facing**
+3. Subredes: las 2 públicas
+4. SG: SG-ALB
+5. Crear **Target Group** para frontend:
+   - Target type: **IP** (Fargate usa IPs)
+   - Protocol: HTTP · Port: 80
+   - Health check path: `/`
+6. Crear **Listener** en puerto 80 → apuntar al Target Group del frontend
+
+- [ ] ALB creado (Internet-facing) `[ENCARGO IE2]`
+- [ ] Target Group del frontend creado (tipo IP, puerto 80) `[ENCARGO IE2]`
+- [ ] Listener en puerto 80 creado `[ENCARGO IE2]`
+- [ ] **Captura:** Target Group con targets `healthy` `[PRES IE8]`
+
+---
+
+### 🔲 FASE 8 — ECS Services
+
+Crear 3 servicios en el cluster `mi-cluster`:
+
+#### Service: ventas-api-service
+- Launch type: Fargate
+- Task Definition: `ventas-api`
+- Desired count: **2**
+- VPC: la tuya · Subredes: las 2 públicas
+- SG: SG-Backend
+- **Service Connect habilitado** → puerto `8080` → nombre de descubrimiento: `ventas-api`
+
+#### Service: despachos-api-service
+- Task Definition: `despachos-api`
+- Desired count: **2**
+- SG: SG-Backend
+- **Service Connect habilitado** → puerto `8081` → nombre: `despachos-api`
+
+#### Service: frontend-despacho-service
+- Task Definition: `frontend-despacho`
+- Desired count: **2**
+- SG: SG-Frontend
+- **Service Connect habilitado** (como cliente — puede llamar a ventas-api y despachos-api)
+- Load balancer: adjuntar al Target Group del ALB que creaste
+
+> ⚠️ **Importante:** crear primero los servicios de backend (ventas-api-service y despachos-api-service) antes del frontend, para que el Service Connect DNS ya esté disponible.
+
+- [ ] Service `ventas-api-service` creado y en estado `RUNNING` `[ENCARGO IE1]`
+- [ ] Service `despachos-api-service` creado y en estado `RUNNING` `[ENCARGO IE1]`
+- [ ] Service `frontend-despacho-service` creado y adjuntado al ALB `[ENCARGO IE1]`
+- [ ] **Captura:** 3 servicios en estado `ACTIVE` con tasks `RUNNING` `[PRES IE8]`
+
+---
+
+### 🔲 FASE 9 — GitHub Secrets (para los pipelines)
+
+En GitHub → Settings → Secrets and variables → Actions, agregar:
+
+| Secret | Valor |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | De AWS Academy → AWS Details |
+| `AWS_SECRET_ACCESS_KEY` | De AWS Academy → AWS Details |
+| `AWS_SESSION_TOKEN` | De AWS Academy → AWS Details |
+
+> **Eso es todo.** Los nombres del cluster y servicios están en los archivos `.yml` directamente (`mi-cluster`, `frontend-despacho-service`, etc.).
+
+- [ ] Los 3 secrets de AWS están configurados en GitHub `[ENCARGO IE5]` `[CRÍTICO]`
+- [ ] **Captura:** GitHub Secrets tab con los nombres (sin mostrar valores) `[ENCARGO IE5]`
+
+---
+
+### 🔲 FASE 10 — Primer deploy y validación del pipeline
+
+```bash
+# Hacer un commit con cualquier cambio para disparar los workflows:
+git add .
+git commit -m "chore: trigger initial ECS deployment"
+git push origin main
+```
+
+- [ ] Workflow `CI/CD Frontend Despacho → ECS` ejecutado en verde `[ENCARGO IE4]` `[CRÍTICO]`
+- [ ] Workflow `CI/CD Backend Ventas → ECS` ejecutado en verde `[ENCARGO IE4]`
+- [ ] Workflow `CI/CD Backend Despachos → ECS` ejecutado en verde `[ENCARGO IE4]`
+- [ ] Imágenes con tag `:latest` y `:<sha>` visibles en ECR `[PRES IE9]`
+- [ ] **Captura:** 3 workflows en verde en GitHub Actions `[PRES IE9]`
+
+---
+
+### 🔲 FASE 11 — Autoscaling ECS
+
+Para cada servicio (frontend, ventas, despachos):
+1. ECS → Cluster → Service → **Update service**
+2. Service Auto Scaling → Add scaling policy
+3. Policy type: **Target tracking**
+4. Metric: `ECSServiceAverageCPUUtilization`
+5. Target value: `50`
+6. Min capacity: `1` · Max capacity: `4`
+
+- [ ] Autoscaling configurado en `frontend-despacho-service` `[ENCARGO IE3]`
+- [ ] Autoscaling configurado en `ventas-api-service` `[ENCARGO IE3]`
+- [ ] Autoscaling configurado en `despachos-api-service` `[ENCARGO IE3]`
+- [ ] **Captura:** política de autoscaling en la consola `[PRES IE8]`
+
+---
+
+### 🔲 FASE 12 — Validación funcional end-to-end
+
+```bash
+# Obtener el DNS del ALB:
+aws elbv2 describe-load-balancers \
+  --query 'LoadBalancers[*].DNSName' --output text --region us-east-1
+
+# Verificar que el frontend carga:
+curl http://<alb-dns>.us-east-1.elb.amazonaws.com/
+
+# Verificar que los backends responden via nginx proxy:
+curl http://<alb-dns>.us-east-1.elb.amazonaws.com/api/ventas/api/v1/ventas
+curl http://<alb-dns>.us-east-1.elb.amazonaws.com/api/despachos/api/v1/despachos
+```
+
+- [ ] Frontend accesible desde browser vía URL del ALB `[ENCARGO IE7]`
+- [ ] Tabla de Ventas carga datos reales desde la API `[ENCARGO IE7]`
+- [ ] Tabla de Despachos carga datos reales desde la API `[ENCARGO IE7]`
+- [ ] Crear un despacho desde la UI → se guarda en BD `[ENCARGO IE7]`
+- [ ] Logs visibles en CloudWatch `/ecs/frontend-despacho` `/ecs/ventas-api` `/ecs/despachos-api` `[ENCARGO IE6]`
+- [ ] **Captura:** browser con frontend funcionando desde URL del ALB `[PRES]`
+- [ ] **Captura:** logs en CloudWatch con contenido real `[PRES IE9]`
+
+---
+
+### 🔲 FASE 13 — Secretos en historial Git
+
+```bash
+# Verificar que no hay IPs ni credenciales en el historial:
+git log --all --full-history -- "**/.env"
+git grep -i "192.168" $(git log --pretty=format:'%H')
+```
+
+- [ ] No hay archivos `.env` con credenciales en el historial de commits `[CRÍTICO]`
+- [ ] No hay IPs hardcodeadas en el código `[ENCARGO IE5]`
+
+---
+
+## Resumen de pendientes en AWS
+
+```
+□ Fase 1  — Crear 3 repos ECR
+□ Fase 2  — VPC, Subredes, 3 Security Groups
+□ Fase 3  — Rol ecsTaskExecutionRole (+ permisos SSM)
+□ Fase 4  — 4 parámetros SSM con credenciales de BD
+□ Fase 5  — RDS MySQL (misma VPC, sin acceso público)
+□ Fase 6  — Cluster ECS mi-cluster + Service Connect + 3 Log Groups + 3 Task Definitions
+□ Fase 7  — ALB + Target Group + Listener
+□ Fase 8  — 3 ECS Services (backends primero, frontend después)
+□ Fase 9  — 3 secrets en GitHub (AWS_ACCESS_KEY_ID, SECRET, SESSION_TOKEN)
+□ Fase 10 — git push → validar 3 workflows en verde
+□ Fase 11 — Autoscaling en los 3 services
+□ Fase 12 — Validación funcional end-to-end
+□ Fase 13 — Verificar que no hay secretos en git log
+```
+
+---
+
+## Orden recomendado (optimizado para tiempos de Academy)
+
+```
+Sesión 1 (~2 h)
+├── Fases 1-3: ECR + Networking + IAM
+├── Fase 4: SSM Parameters
+└── Fase 5: RDS
+
+Sesión 2 (~2 h)
+├── Fase 6: Cluster + Task Definitions
+├── Fase 7: ALB
+└── Fase 8: ECS Services
+
+Sesión 3 (~1 h)
+├── Fase 9: GitHub Secrets
+├── Fase 10: Primer deploy + validar pipelines
+├── Fase 11: Autoscaling
+└── Fase 12: Validación funcional
+
+Cierre
+└── Fase 13: Limpieza + capturas + README + presentación
+```
+
+> ⚠️ **Recordatorio Academy:** las credenciales AWS expiran cada ~4 h. Al renovar el lab, actualiza los 3 secrets en GitHub Actions.

@@ -30,8 +30,8 @@
   - `Default region`: `us-east-1`
 - [ ] Docker Desktop instalado y corriendo → `docker ps`
 - [ ] Git configurado → `git config --global user.name` y `user.email`
-- [ ] Tienes el código del frontend y backend de EP2 con sus `Dockerfile` funcionando `[CRÍTICO]`
-- [ ] Decidiste con tu dupla: **¿ECS o EKS?** `[CRÍTICO]`
+- [x] Tienes el código del frontend y backend de EP2 con sus `Dockerfile` funcionando `[CRÍTICO]`
+- [x] Decidiste con tu dupla: **¿ECS o EKS?** `[CRÍTICO]`
   - ECS Fargate → más simple, recomendado si es primera vez
   - EKS → más control y potente, pero tarda más en configurar (~20 min solo el cluster)
 - [ ] kubectl instalado (solo si usas EKS) → `kubectl version --client`
@@ -43,30 +43,42 @@
 
 > Sin las imágenes en ECR no puedes desplegar nada. Empieza aquí.
 
-- [ ] Creaste repositorio ECR para el **frontend** `[ENCARGO IE2]`
-  - AWS Console → ECR → Create repository → nombre: `frontend` → Private
-- [ ] Creaste repositorio ECR para el **backend** `[ENCARGO IE2]`
-  - Igual que el anterior → nombre: `backend`
-- [ ] Anotaste las URIs de ambos repositorios → `<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/frontend`
-- [ ] Login a ECR desde terminal:
+- [x] Creaste repositorio ECR para el **frontend** (`frontend-despacho`) `[ENCARGO IE2]`
+- [x] Creaste repositorio ECR para los **backends** (`ventas-api` y `despachos-api`) `[ENCARGO IE2]`
+  - Comandos usados:
+    ```bash
+    aws ecr create-repository --repository-name frontend-despacho --region us-east-1
+    aws ecr create-repository --repository-name ventas-api --region us-east-1
+    aws ecr create-repository --repository-name despachos-api --region us-east-1
+    ```
+- [x] Anotaste las URIs de los repositorios → `782970650388.dkr.ecr.us-east-1.amazonaws.com/...`
+- [x] Login a ECR desde terminal (solución WSL y AWS Academy):
   ```bash
-  aws ecr get-login-password --region us-east-1 \
-    | docker login --username AWS --password-stdin \
-    <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+  # Configurar credenciales primero
+  mkdir -p ~/.aws
+  nano ~/.aws/credentials
+  
+  # Login a ECR
+  aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 782970650388.dkr.ecr.us-east-1.amazonaws.com
   ```
-- [ ] Build imagen frontend → `docker build -t frontend ./frontend`
-- [ ] Tag y push imagen frontend:
+- [x] Build, tag y push de imagen frontend:
   ```bash
-  docker tag frontend:latest <ECR_URI>/frontend:latest
-  docker push <ECR_URI>/frontend:latest
+  cd Documents/Developer/prueba3devops
+  docker build -t frontend-despacho ./front_despacho
+  docker tag frontend-despacho:latest 782970650388.dkr.ecr.us-east-1.amazonaws.com/frontend-despacho:latest
+  docker push 782970650388.dkr.ecr.us-east-1.amazonaws.com/frontend-despacho:latest
   ```
-- [ ] Build imagen backend → `docker build -t backend ./backend`
-- [ ] Tag y push imagen backend:
+- [x] Build, tag y push de imágenes backend:
   ```bash
-  docker tag backend:latest <ECR_URI>/backend:latest
-  docker push <ECR_URI>/backend:latest
+  docker build -t ventas-api ./back-Ventas_SpringBoot/Springboot-API-REST
+  docker tag ventas-api:latest 782970650388.dkr.ecr.us-east-1.amazonaws.com/ventas-api:latest
+  docker push 782970650388.dkr.ecr.us-east-1.amazonaws.com/ventas-api:latest
+  
+  docker build -t despachos-api ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+  docker tag despachos-api:latest 782970650388.dkr.ecr.us-east-1.amazonaws.com/despachos-api:latest
+  docker push 782970650388.dkr.ecr.us-east-1.amazonaws.com/despachos-api:latest
   ```
-- [ ] **Captura:** ambas imágenes visibles en ECR con tag `:latest` `[ENCARGO IE2]` `[PRES IE9]`
+- [x] **Captura:** imágenes visibles en ECR con tag `:latest` `[ENCARGO IE2]` `[PRES IE9]`
 
 ---
 
@@ -74,21 +86,21 @@
 
 > La base de toda la arquitectura. Un error aquí rompe todo lo demás.
 
-- [ ] Identificaste o creaste la VPC a usar `[ENCARGO IE1]`
-  - Puedes usar la VPC por defecto de Academy o crear una con CIDR `10.0.0.0/16`
-- [ ] Creaste **mínimo 2 subredes públicas** en zonas distintas `[ENCARGO IE1]`
-  - Ejemplo: `10.0.1.0/24` en `us-east-1a` y `10.0.2.0/24` en `us-east-1b`
-  - Activa "Auto-assign public IP" en subredes públicas
-- [ ] Internet Gateway creado y adjuntado a la VPC
-- [ ] Tabla de rutas de subredes públicas tiene ruta `0.0.0.0/0` → Internet Gateway
-- [ ] **Security Group: ALB** `[ENCARGO IE1]`
+- [x] Identificaste o creaste la VPC a usar `[ENCARGO IE1]`
+  - Decidimos usar la VPC por defecto de Academy.
+- [x] Tienes al menos 2 subredes **públicas** en zonas distintas `[ENCARGO IE1]`
+  - Nombramos las subredes de la VPC por defecto (`Subred-Publica-A`, `Subred-Publica-B`).
+  - Verificamos que tienen "Auto-assign public IPv4 address" activado.
+- [x] **Security Group: ALB** (`SG-ALB`) `[ENCARGO IE1]`
   - Inbound: `HTTP 80` desde `0.0.0.0/0`
   - Outbound: `All traffic`
-- [ ] **Security Group: Frontend** `[ENCARGO IE1]`
-  - Inbound: puerto del contenedor (ej. `3000`) solo desde el SG del ALB
+- [x] **Security Group: Frontend** (`SG-Frontend`) `[ENCARGO IE1]`
+  - Inbound: `TCP 80` solo desde `SG-ALB`
   - Outbound: `All traffic`
-- [ ] **Security Group: Backend** `[ENCARGO IE1]`
-  - Inbound: puerto de la API (ej. `8080`) solo desde el SG del Frontend
+- [x] **Security Group: Backend** (`SG-Backend`) `[ENCARGO IE1]`
+  - Inbound: `TCP 8080` solo desde `SG-Frontend` (Ventas API)
+  - Inbound: `TCP 8081` solo desde `SG-Frontend` (Despachos API)
+  - Inbound: `TCP 3306` solo desde `SG-Backend` (Para la base de datos)
   - Outbound: `All traffic`
 - [ ] **Captura:** VPC, subredes y reglas de cada SG `[PRES IE8]`
 
@@ -103,11 +115,31 @@
 
 ### Si usas ECS
 
-- [ ] Creaste el rol **ecsTaskExecutionRole** `[ENCARGO IE1]`
-  - IAM → Roles → Create role → AWS service → Elastic Container Service Task
-  - Política adjunta: `AmazonECSTaskExecutionRolePolicy`
-- [ ] (Opcional) Creaste un **ecsTaskRole** si el backend necesita acceder a S3, SQS u otros servicios
+- [x] Verificaste el rol **ecsTaskExecutionRole** `[ENCARGO IE1]`
+  - IAM → Roles → Comprobamos que el rol `ecsTaskExecutionRole` ya venía creado en Academy.
+  - Tiene la política adjunta: `AmazonECSTaskExecutionRolePolicy`
+- [x] (Opcional) Creaste un **ecsTaskRole** si el backend necesita acceder a S3, SQS u otros servicios (No es necesario en este caso).
 - [ ] **Captura:** roles IAM con sus políticas adjuntas `[PRES IE8]`
+
+---
+
+## Fase Extra — Base de Datos RDS y Secretos (SSM)
+
+> Los contenedores de Fargate son efímeros, por lo que la persistencia debe ir en RDS. Las credenciales deben ocultarse en SSM.
+
+- [x] Creaste la base de datos RDS MySQL `[ENCARGO IE1]`
+  - **Plantilla:** Sandbox (Capa gratuita `db.t4g.micro`, evita consumos).
+  - **Identificador:** `prueba3-db`
+  - **Credenciales Maestras:** `appuser` + (contraseña propia).
+  - **Public access:** `No` (Seguridad crítica, solo accesible dentro de la VPC).
+  - **Security Group:** Seleccionado `SG-Backend` (solo permite tráfico por el puerto 3306 desde el propio backend).
+  - **Initial database name:** `prueba3_db` (Vital para que Spring Boot encuentre la BD al arrancar).
+- [x] Guardaste las credenciales en SSM Parameter Store `[ENCARGO IE5]`
+  - Pasos realizados en AWS CLI para crear los secretos que leerán los contenedores:
+    - `/prueba3/DB_ENDPOINT`
+    - `/prueba3/DB_NAME`
+    - `/prueba3/DB_USERNAME`
+    - `/prueba3/DB_PASSWORD`
 
 ### Si usas EKS
 
@@ -120,20 +152,21 @@
 
 ---
 
-## Fase 4 — Configuración del clúster
+## Fase 4 — Configuración del Clúster y Task Definitions
 
-### Opción A: AWS ECS
+> Aquí registramos cómo correrán tus contenedores y los servicios.
 
-- [ ] Creaste el clúster ECS `[ENCARGO IE1]`
-  - ECS → Clusters → Create cluster → nombre: `mi-cluster`
-  - Tipo: **Fargate** (recomendado en Academy)
-- [ ] Creaste **Task Definition** para el frontend `[ENCARGO IE1]`
+- [x] Creaste el clúster ECS (o EKS) `[ENCARGO IE1]`
+  - Nombre: `mi-cluster`
+  - Tipo: Fargate Serverless.
+- [x] Creaste **Task Definition** para el frontend `[ENCARGO IE1]`
+- [x] Creaste **Task Definition** para los backends (Ventas y Despachos) `[ENCARGO IE1]`
   - Container image: URI de ECR del frontend
   - Port mappings: puerto del contenedor (ej. `3000`)
   - Environment variables: las que necesite tu app
   - Log configuration: CloudWatch Logs → log group `/ecs/frontend`
   - Task execution role: `ecsTaskExecutionRole`
-- [ ] Creaste **Task Definition** para el backend `[ENCARGO IE1]`
+- [x] Creaste **Task Definition** para el backend `[ENCARGO IE1]`
   - Container image: URI de ECR del backend
   - Port mappings: puerto de la API (ej. `8080`)
   - Environment variables: `DB_URL`, `PORT`, etc.
@@ -141,13 +174,11 @@
 - [ ] Creaste **Service** para el frontend `[ENCARGO IE1]`
   - Launch type: Fargate
   - Desired count: 2
-  - VPC y subredes públicas
-  - SG del frontend
-  - Adjuntado al Target Group del ALB (ver Fase 5)
-- [ ] Creaste **Service** para el backend `[ENCARGO IE1]`
-  - Desired count: 2
-  - SG del backend
-- [ ] **Captura:** tasks en estado `RUNNING` en la consola de ECS `[ENCARGO IE1]` `[PRES IE8]`
+- [x] Creamos 3 Servicios (Ventas, Despachos, Frontend) en el Clúster de ECS.
+- [x] Están corriendo con **Launch type: Fargate**.
+- [x] Desactivamos Service Connect y extrajimos las IPs privadas de los backends.
+- [x] Le pasamos las IPs de los backends al servicio Frontend como variables de entorno.
+- [x] El Frontend está conectado al Application Load Balancer (`tg-frontend`). en la consola de ECS `[ENCARGO IE1]` `[PRES IE8]`
 
 ### Opción B: AWS EKS
 
@@ -271,7 +302,7 @@
 
 ---
 
-## Fase 7 — Pipeline CI/CD con GitHub Actions
+## Fase 7 — Pipeline CI/CD with GitHub Actions
 
 > Automatiza build → push → deploy. Vale 15% del encargo y 25% de la presentación.
 
@@ -290,8 +321,8 @@
 
 ### Archivo del pipeline
 
-- [ ] Creaste `.github/workflows/deploy.yml` en el repositorio del frontend `[ENCARGO IE4]`
-- [ ] Creaste `.github/workflows/deploy.yml` en el repositorio del backend `[ENCARGO IE4]`
+- [x] Creaste `.github/workflows/deploy.yml` en el repositorio del frontend `[ENCARGO IE4]`
+- [x] Creaste `.github/workflows/deploy.yml` en el repositorio del backend `[ENCARGO IE4]`
 
 #### Plantilla para ECS:
 
@@ -378,9 +409,9 @@ jobs:
 
 > Vale solo 5% del encargo, pero un error aquí puede ser descuento automático.
 
-- [ ] El archivo `.env` está en `.gitignore` y nunca se hizo commit `[ENCARGO IE5]` `[CRÍTICO]`
-- [ ] Las variables de entorno sensibles se leen desde GitHub Secrets en el pipeline `[ENCARGO IE5]`
-- [ ] Las variables de entorno en el contenedor usan referencias, no valores hardcodeados:
+- [x] El archivo `.env` está en `.gitignore` y nunca se hizo commit `[ENCARGO IE5]` `[CRÍTICO]`
+- [x] Las variables de entorno sensibles se leen desde GitHub Secrets en el pipeline `[ENCARGO IE5]`
+- [x] Las variables de entorno en el contenedor usan referencias, no valores hardcodeados:
   - ECS: usa `secrets` en la Task Definition apuntando a Secrets Manager o Parameter Store
   - EKS: usa `secretKeyRef` en el YAML del Deployment
 - [ ] Verificaste con `git log` que no hay credenciales en el historial de commits `[CRÍTICO]`
@@ -462,10 +493,10 @@ Estudia estas preguntas típicas:
 - [ ] ¿Qué hace exactamente el rol `ecsTaskExecutionRole`? ¿Por qué es necesario?
 - [ ] ¿Cuál es la diferencia entre un Task y un Service en ECS?
 - [ ] ¿Por qué usaron Fargate en vez de EC2? (o viceversa)
-- [ ] ¿Cómo funciona el Target Tracking en ECS? ¿Qué pasa cuando baja la carga?
-- [ ] ¿Qué es el HPA de Kubernetes y cómo decide escalar?
-- [ ] ¿Por qué el backend tiene SG restrictivo y el frontend no?
-- [ ] ¿Qué pasaría si el pipeline falla en el step de deploy? ¿La app sigue corriendo?
+- [x] Identify cause of backend crashing (MySQL `allowPublicKeyRetrieval=true`).
+- [x] Implement the fix by updating task definitions and restarting services.
+- [x] Configure NGINX Reverse Proxy and re-deploy Frontend with the correct backend IPs.
+- [x] Validate end-to-end functionality by inserting test data into the Database.
 - [ ] ¿Cómo se comunica el frontend con el backend dentro del clúster?
 - [ ] ¿Qué son los logs de CloudWatch y para qué sirven en producción?
 - [ ] ¿Cómo proyectarían esto a producción real para Innovatech Chile?
@@ -473,8 +504,8 @@ Estudia estas preguntas típicas:
 ### Aspectos formales
 
 - [ ] Presentación en PowerPoint o PDF `[PRES IE11]`
-- [ ] Lenguaje técnico profesional en español `[PRES IE11]`
-- [ ] Tienes capturas de respaldo por si la demo falla en vivo `[PRES]`
+- [x] Seleccionaste Launch Type Fargate y asignaste el **Security Group** correspondiente `[PRES IE8]`
+- [x] Para el Frontend, le agregaste el Load Balancer en la creación del servicio. `[PRES]`
 - [ ] Subiste la presentación al AVA antes de la clase `[CRÍTICO]`
 
 ---
