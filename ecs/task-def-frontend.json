@@ -21,11 +21,11 @@
       "environment": [
         {
           "name": "BACKEND_VENTAS_URL",
-          "value": "http://172.31.5.128:8080"
+          "value": "http://ventas-api:8080"
         },
         {
           "name": "BACKEND_DESPACHOS_URL",
-          "value": "http://172.31.59.9:8081"
+          "value": "http://despachos-api:8081"
         }
       ],
       "logConfiguration": {
