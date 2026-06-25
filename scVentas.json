@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "namespace": "mi-cluster",
+  "services": [
+    {
+      "portName": "ventas-api-8080-tcp",
+      "discoveryName": "ventas-api",
+      "clientAliases": [{"port": 8080, "dnsName": "ventas-api"}]
+    }
+  ],
+  "logConfiguration": {
+    "logDriver": "awslogs",
+    "options": {
+      "awslogs-group": "/ecs/ventas-api",
+      "awslogs-region": "us-east-1",
+      "awslogs-stream-prefix": "ecs-sc"
+    }
+  }
+}

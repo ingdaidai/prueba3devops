@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "namespace": "mi-cluster",
+  "services": [
+    {
+      "portName": "despachos-api-8081-tcp",
+      "discoveryName": "despachos-api",
+      "clientAliases": [{"port": 8081, "dnsName": "despachos-api"}]
+    }
+  ]
+}
